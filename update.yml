@@ -15,6 +15,9 @@ concurrency:
   group: "pages"
   cancel-in-progress: false
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true   # Usa Node.js 24, evita el warning
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -29,7 +32,7 @@ jobs:
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Instalar dependencias
         run: pip install pandas openpyxl numpy
