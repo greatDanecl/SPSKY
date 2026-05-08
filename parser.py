@@ -12,9 +12,15 @@ DATA_DIR    = Path(__file__).parent / "data"
 OUTPUT_HTML = Path(__file__).parent / "index.html"
 
 MONTH_MAP = {
+    # Inglés mayúscula/minúscula
     'Jan':'01','Feb':'02','Mar':'03','Apr':'04','May':'05','Jun':'06',
     'Jul':'07','Aug':'08','Sep':'09','Oct':'10','Nov':'11','Dec':'12',
-    'Ene':'01','Abr':'04','Ago':'08','Dic':'12',
+    'jan':'01','feb':'02','mar':'03','apr':'04','may':'05','jun':'06',
+    'jul':'07','aug':'08','sep':'09','oct':'10','nov':'11','dec':'12',
+    # Español mayúscula/minúscula — todos los meses
+    'Ene':'01','Feb':'02','Mar':'03','Abr':'04','May':'05','Jun':'06',
+    'Jul':'07','Ago':'08','Sep':'09','Oct':'10','Nov':'11','Dic':'12',
+    'ene':'01','abr':'04','ago':'08','dic':'12',
 }
 PERIOD_LABELS_MAP = {
     '2025-01':'Ene 2025','2025-02':'Feb 2025','2025-03':'Mar 2025',
@@ -146,6 +152,32 @@ def count_vuelos(df, pilot_row, abcd):
             vuelos += 1
     return vuelos
 
+def find_totals(df, pilot_row, max_look=16):
+    """Busca dinámicamente Credits, Block hours, Duty hours desde pilot_row."""
+    cred_h = duty_h = blk_h = 0.0
+    for k in range(1, max_look):
+        row = pilot_row + k
+        if row >= len(df): break
+        lbl = str(df.iloc[row, 0]).strip()
+        # Stop if we hit the next pilot
+        if re.match(r'^[A-Z]{4,5}$', lbl) and k > 5:
+            break
+        if lbl == 'Credits':       cred_h = parse_td(df.iloc[row, 1])
+        elif lbl == 'Block hours': blk_h  = parse_td(df.iloc[row, 1])
+        elif lbl == 'Duty hours':  duty_h = parse_td(df.iloc[row, 1])
+    return cred_h, blk_h, duty_h
+
+def block_size(df, pilot_row, max_look=18):
+    """Determina cuántas filas ocupa el bloque buscando el siguiente código de piloto."""
+    for k in range(5, max_look):
+        row = pilot_row + k
+        if row >= len(df): return k
+        c0 = str(df.iloc[row, 0]).strip()
+        # Next pilot starts a new block
+        if re.match(r'^[A-Z]{4,5}$', c0):
+            return k
+    return 13  # fallback generoso
+
 def parse_sheet(df, period, role):
     pilots = []
     if len(df) < 10 or df.shape[1] < 2: return pilots
@@ -174,23 +206,28 @@ def parse_sheet(df, period, role):
             lname   = str(df.iloc[i+2, 0]).strip() if i+2 < len(df) else ''
             rut_pos = str(df.iloc[i+3, 0]).strip() if i+3 < len(df) else ''
             base    = str(df.iloc[i+4, 0]).strip() if i+4 < len(df) else ''
-            cred_h  = parse_td(df.iloc[i+6, 1] if i+6 < len(df) else None)
-            blk_h   = parse_td(df.iloc[i+7, 1] if i+7 < len(df) else None)
-            duty_h  = parse_td(df.iloc[i+8, 1] if i+8 < len(df) else None)
+            # Dynamic search for totals — handles variable row offsets
+            cred_h, blk_h, duty_h = find_totals(df, i)
             sched   = [str(v).strip() for v in df.iloc[i, 2:].tolist()]
             pilot_row = i
-            i += 9
+            i += block_size(df, i)
 
         if not re.match(r'^[A-Z]{4,5}$', code): continue
-        pos  = rut_pos.split(' - ')[-1].strip() if ' - ' in rut_pos else ''
+        # Handle multi-position strings like "19.243.849-7 - CP, C15M"
+        pos_raw = rut_pos.split(' - ')[-1].strip() if ' - ' in rut_pos else ''
+        # Take first position if multiple separated by comma
+        pos = pos_raw.split(',')[0].strip()
         if not pos or pos in ['nan', 'NaT', '']: continue
         name = (fname_p + ' ' + lname).strip()
-        if not name or any(t in name.upper() for t in ['TEST','PRUEBA','NAN']): continue
+        if not name or re.search(r'\b(TEST|PRUEBA)\b', name.upper()): continue
 
+        # Position grouping
+        # C15M = Capitán (habilitación especial A320 family)
+        # FON  = Primer Oficial (igual que FO)
         pg = 'Otro'
-        if pos in ['CP','CPN']:                  pg = 'Capitán'
-        elif pos in ['FO','FON']:                pg = 'Primer Oficial'
-        elif pos in ['INS','INST','IOA','C15M']: pg = 'Instructor'
+        if pos in ['CP', 'CPN', 'C15M']:   pg = 'Capitán'
+        elif pos in ['FO', 'FON']:          pg = 'Primer Oficial'
+        elif pos in ['INS', 'INST', 'IOA']: pg = 'Instructor'
 
         vac  = sum(1 for s in sched if any(w in s.upper() for w in ['VACAC','VACAO','VACAP','VACAS']))
         med  = sum(1 for s in sched if any(w in s.upper() for w in ['LM','LICM','LICMED']))
@@ -515,11 +552,11 @@ def generate_html(records, periods):
         '  const convPct = (turnos && vuelos) ? vuelos/turnos*100 : null;\n'
         '\n'
         "  document.getElementById('kpiRow').innerHTML =\n"
-        '    \'<div class="kpi k-clay"><div class="kpi-label">Block \u00b7 \' + (PERIOD_LABELS[lp]||lp) + \'</div><div class="kpi-val">\' + fmt(mb) + \'<span class="kpi-unit">h</span></div><div class="kpi-footer"><span class="kpi-vs">Prom.: <b>\' + fmt(ab) + \'h</b></span><span class="delta \' + dc(bd) + \'">\' + ds(bd) + \'</span></div></div>\' +\n'
-        '    \'<div class="kpi k-sand"><div class="kpi-label">Duty \u00b7 \' + (PERIOD_LABELS[lp]||lp) + \'</div><div class="kpi-val">\' + fmt(md) + \'<span class="kpi-unit">h</span></div><div class="kpi-footer"><span class="kpi-vs">Prom.: <b>\' + fmt(ad) + \'h</b></span><span class="delta \' + dc(dd) + \'">\' + ds(dd) + \'</span></div></div>\' +\n'
+        '    \'<div class="kpi k-clay"><div class="kpi-label">Bloque \u00b7 \' + (PERIOD_LABELS[lp]||lp) + \'</div><div class="kpi-val">\' + fmt(mb) + \'<span class="kpi-unit">h</span></div><div class="kpi-footer"><span class="kpi-vs">Prom.: <b>\' + fmt(ab) + \'h</b></span><span class="delta \' + dc(bd) + \'">\' + ds(bd) + \'</span></div></div>\' +\n'
+        '    \'<div class="kpi k-sand"><div class="kpi-label">Deber \u00b7 \' + (PERIOD_LABELS[lp]||lp) + \'</div><div class="kpi-val">\' + fmt(md) + \'<span class="kpi-unit">h</span></div><div class="kpi-footer"><span class="kpi-vs">Prom.: <b>\' + fmt(ad) + \'h</b></span><span class="delta \' + dc(dd) + \'">\' + ds(dd) + \'</span></div></div>\' +\n'
         '    \'<div class="kpi k-sage"><div class="kpi-label">D\u00edas libres \u00b7 \' + (PERIOD_LABELS[lp]||lp) + \'</div><div class="kpi-val">\' + ml + \'<span class="kpi-unit">d</span></div><div class="kpi-footer"><span class="kpi-vs">Prom.: <b>\' + fmt(al,0) + \'d</b></span><span class="delta \' + dc(ml-al) + \'">\' + (ml-al>=0?"+":"") + (ml-al).toFixed(0) + \'d</span></div></div>\' +\n'
         '    \'<div class="kpi k-dusk"><div class="kpi-label">Turnos prog. \u00b7 \' + (PERIOD_LABELS[lp]||lp) + \'</div><div class="kpi-val">\' + (turnos !== null ? turnos : "\\u2014") + \'<span class="kpi-unit">\' + (vuelos !== null ? " / "+vuelos+" ef." : "") + \'</span></div><div class="kpi-footer"><span class="kpi-vs">\' + (convPct !== null ? "Conversi\\u00f3n:" : "Sin datos efectuados") + \'</span>\' + (convPct !== null ? \'<span class="delta \' + (convPct>=80?"d-up":convPct>=60?"d-warn":"d-down") + \'">\' + convPct.toFixed(0) + \'%</span>\' : "") + \'</div></div>\' +\n'
-        '    \'<div class="kpi k-rust"><div class="kpi-label">Block acumulado</div><div class="kpi-val">\' + fmt(accB,0) + \'<span class="kpi-unit">h</span></div><div class="kpi-footer"><span class="kpi-vs">\' + actP.length + \' meses activos</span><span class="delta d-neu">/\' + PERIODS.length + \'m</span></div></div>\' +\n'
+        '    \'<div class="kpi k-rust"><div class="kpi-label">Bloque acumulado</div><div class="kpi-val">\' + fmt(accB,0) + \'<span class="kpi-unit">h</span></div><div class="kpi-footer"><span class="kpi-vs">\' + actP.length + \' meses activos</span><span class="delta d-neu">/\' + PERIODS.length + \'m</span></div></div>\' +\n'
         '    \'<div class="kpi k-sand"><div class="kpi-label">Prog. vs Efectuado</div><div class="kpi-val">\' + fmt(Math.abs(pva),1) + \'<span class="kpi-unit">%</span></div><div class="kpi-footer"><span class="kpi-vs">P:<b>\' + fmt(accProg,0) + \'h</b> E:<b>\' + fmt(accAct,0) + \'h</b></span><span class="delta \' + (pva>=0?"d-up":"d-down") + \'">\' + (pva>=0?"\\u25b2":"\\u25bc") + \' ef.</span></div></div>\';\n'
         '\n'
         '  // Line chart\n'
