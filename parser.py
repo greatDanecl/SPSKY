@@ -39,19 +39,34 @@ def parse_td(val):
     return 0.0
 
 def detect_period_from_filename(fname):
-    """Intenta extraer YYYY-MM del nombre del archivo."""
-    m = re.search(r'(20\d{2})[-_]?(0[1-9]|1[0-2])', fname)
-    if m: return m.group(1) + '-' + m.group(2)
-    month_names = r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|Ene|Abr|Ago|Dic)'
+    """Extrae YYYY-MM del nombre del archivo.
+    Soporta: efec_Feb_2026_SCL.xlsx, prog_Mar_2026_PMC.xlsx, y variantes.
+    """
+    fl = fname.lower()
+    # Pattern: cualquier mes en texto + año de 4 dígitos
+    month_names = r'(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|ene|abr|ago|dic)'
     year_names  = r'(20\d{2})'
-    m2 = re.search(month_names + r'.*?' + year_names, fname, re.I)
-    if m2: return m2.group(2) + '-' + MONTH_MAP.get(m2.group(1).capitalize(), '00')
-    m3 = re.search(year_names + r'.*?' + month_names, fname, re.I)
-    if m3: return m3.group(1) + '-' + MONTH_MAP.get(m3.group(2).capitalize(), '00')
+    # mes antes que año: efec_feb_2026_SCL
+    m = re.search(month_names + r'[_\-\s]*' + year_names, fl)
+    if m:
+        mon = m.group(1).capitalize()
+        yr  = m.group(2)
+        code = MONTH_MAP.get(mon, '00')
+        if code != '00': return yr + '-' + code
+    # año antes que mes: 2026_feb
+    m2 = re.search(year_names + r'[_\-\s]*' + month_names, fl)
+    if m2:
+        mon = m2.group(2).capitalize()
+        yr  = m2.group(1)
+        code = MONTH_MAP.get(mon, '00')
+        if code != '00': return yr + '-' + code
+    # año + número de mes: 2026-02
+    m3 = re.search(r'(20\d{2})[-_](0[1-9]|1[0-2])', fl)
+    if m3: return m3.group(1) + '-' + m3.group(2)
     return None
 
 def detect_period_from_df(df):
-    """Extrae el período del contenido del archivo."""
+    """Extrae el período del contenido del archivo cuando el nombre no alcanza."""
     try:
         cell = str(df.iloc[1, 2])
         m = re.search(r'(\d{2})(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|Ene|Abr|Ago|Dic)(\d{2})', cell, re.I)
@@ -66,7 +81,6 @@ def detect_period_from_df(df):
             m = re.match(r'(\d{2})(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|Ene|Abr|Ago|Dic)', cell, re.I)
             if m:
                 mon = m.group(2).capitalize()
-                # try to get year from row 1
                 for c2 in range(df.shape[1]):
                     yr_m = re.search(r'(20\d{2})', str(df.iloc[1, c2]))
                     if yr_m: return yr_m.group(1) + '-' + MONTH_MAP.get(mon, '00')
@@ -75,14 +89,21 @@ def detect_period_from_df(df):
     return None
 
 def detect_role(fname, sheet_name):
+    """Detecta si el archivo es rol programado o efectuado.
+    Convención: efec_MMM_AAAA_BASE.xlsx / prog_MMM_AAAA_BASE.xlsx
+    """
     fl, sl = fname.lower(), sheet_name.lower()
-    # Convencion estandar: efectuado_MMM_AAAA.xlsx / programado_MMM_AAAA.xlsx
+    # Convención principal: empieza con efec o prog
+    if fl.startswith('efec'):  return 'actual'
+    if fl.startswith('prog'):  return 'programmed'
+    # Variantes largas
     if fl.startswith('efectuado'):  return 'actual'
     if fl.startswith('programado'): return 'programmed'
-    # Fallbacks para archivos con nombres distintos
+    # Fallbacks por contenido del nombre
     if any(w in fl for w in ['horas','actual','efect','real','flown']): return 'actual'
-    if any(w in fl for w in ['prog','plan','sched','mando','master']):  return 'programmed'
-    if any(w in sl for w in ['hora','actual','efect']):                  return 'actual'
+    if any(w in fl for w in ['plan','sched','mando','master']):         return 'programmed'
+    # Fallback por nombre de hoja
+    if any(w in sl for w in ['hora','actual','efect']): return 'actual'
     return 'programmed'
 
 def is_turno_day(val):
