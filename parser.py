@@ -687,10 +687,10 @@ def generate_html(records, periods):
         '  // Alerts\n'
         '  function alrt(t,title,desc){return \'<div class="alert \'+t+\'"><div class="alert-dot"></div><div><div class="alert-title">\'+title+\'</div><div class="alert-desc">\'+desc+\'</div></div></div>\';}\n'
         '  let alerts = "";\n'
-        '  alerts += alrt(mb>100?"danger":mb>85?"warn":"ok", "Bloque mensual \\u00b7 "+fmt(mb)+"h", mb>100?"Supera l\\u00edmite DAN 121 de 100h/mes":mb>85?"Cercano al l\\u00edmite de 100h/mes":"Dentro del l\\u00edmite (100h/mes)");\n'
-        '  alerts += alrt(accB>900?"danger":accB>750?"warn":"ok", "Bloque acumulado \\u00b7 "+accB.toFixed(0)+"h", accB>900?"Muy cerca del l\\u00edmite anual de 1.000h":accB>750?"Supera el 75% del l\\u00edmite anual":"Sin riesgo l\\u00edmite anual ("+(1000-accB).toFixed(0)+"h disp.)");\n'
+        '  alerts += alrt(mb>100?"danger":mb>85?"warn":"ok", "Block mensual \\u00b7 "+fmt(mb)+"h", mb>100?"Supera l\\u00edmite DAN 121 de 100h/mes":mb>85?"Cercano al l\\u00edmite de 100h/mes":"Dentro del l\\u00edmite (100h/mes)");\n'
+        '  alerts += alrt(accB>900?"danger":accB>750?"warn":"ok", "Block acumulado \\u00b7 "+accB.toFixed(0)+"h", accB>900?"Muy cerca del l\\u00edmite anual de 1.000h":accB>750?"Supera el 75% del l\\u00edmite anual":"Sin riesgo l\\u00edmite anual ("+(1000-accB).toFixed(0)+"h disp.)");\n'
         '  alerts += alrt(ml<8?"danger":ml<10?"warn":"ok", "D\\u00edas libres \\u00b7 "+ml+"d", ml<8?"Bajo el m\\u00ednimo reglamentario (8d/mes)":ml<10?"Dentro del m\\u00ednimo, bajo el promedio del cargo":"Descanso adecuado seg\\u00fan DAN 121");\n'
-        '  alerts += alrt(md>130?"danger":md>105?"warn":"ok", "Horas deber \\u00b7 "+fmt(md)+"h", md>130?"Horas deber muy elevadas, revisar FDPs":md>105?"Sobre promedio del cargo":"Dentro de rango normal");\n'
+        '  alerts += alrt(md>130?"danger":md>105?"warn":"ok", "Horas duty \\u00b7 "+fmt(md)+"h", md>130?"Horas duty muy elevadas, revisar FDPs":md>105?"Sobre promedio del cargo":"Dentro de rango normal");\n'
         '  alerts += \'<div style="margin-top:6px;padding:9px 11px;background:var(--sand-100);border-radius:7px;font-size:10px;color:var(--muted);line-height:1.5;font-family:var(--mono)">Alertas indicativas. El c\\u00e1lculo oficial de FDP y l\\u00edmites es responsabilidad de Operaciones.</div>\';\n'
         "  document.getElementById('alertList').innerHTML = alerts;\n"
         '}\n'
