@@ -76,10 +76,54 @@ def detect_period_from_df(df):
 
 def detect_role(fname, sheet_name):
     fl, sl = fname.lower(), sheet_name.lower()
+    # Convencion estandar: efectuado_MMM_AAAA.xlsx / programado_MMM_AAAA.xlsx
+    if fl.startswith('efectuado'):  return 'actual'
+    if fl.startswith('programado'): return 'programmed'
+    # Fallbacks para archivos con nombres distintos
     if any(w in fl for w in ['horas','actual','efect','real','flown']): return 'actual'
     if any(w in fl for w in ['prog','plan','sched','mando','master']):  return 'programmed'
     if any(w in sl for w in ['hora','actual','efect']):                  return 'actual'
     return 'programmed'
+
+def is_turno_day(val):
+    """Dia con turno operacional: tiene hora de presentacion o codigo de standby."""
+    s = str(val).strip()
+    if re.match(r'^(\d{2}:\d{2}\s*->|->?\s*\d{2}:\d{2})', s): return True
+    if any(t in s.upper() for t in ['TURNO','ACTIVO','ELEAR']): return True
+    return False
+
+def is_flight_number(val):
+    """Numero de vuelo en fila secundaria (2-4 digitos)."""
+    s = str(val).strip()
+    return bool(re.match(r'^\d{2,4}$', s))
+
+def count_turnos(df, pilot_row, abcd):
+    """Cuenta dias con turno programado para un piloto."""
+    col_start = 2
+    n_cols = df.shape[1] - col_start
+    turnos = 0
+    sched_row = pilot_row
+    r1_row    = pilot_row + 1
+    for col in range(n_cols):
+        s0 = str(df.iloc[sched_row, col + col_start]).strip() if sched_row < len(df) else ''
+        s1 = str(df.iloc[r1_row,    col + col_start]).strip() if r1_row    < len(df) else ''
+        if is_turno_day(s0) or is_turno_day(s1):
+            turnos += 1
+    return turnos
+
+def count_vuelos(df, pilot_row, abcd):
+    """Cuenta dias con vuelos efectuados (tienen numero de vuelo en filas secundarias)."""
+    col_start = 2
+    n_cols = df.shape[1] - col_start
+    vuelos = 0
+    r1_row = pilot_row + 1
+    r2_row = pilot_row + 2
+    for col in range(n_cols):
+        s1 = str(df.iloc[r1_row, col + col_start]).strip() if r1_row < len(df) else ''
+        s2 = str(df.iloc[r2_row, col + col_start]).strip() if r2_row < len(df) else ''
+        if is_flight_number(s1) or is_flight_number(s2):
+            vuelos += 1
+    return vuelos
 
 def parse_sheet(df, period, role):
     pilots = []
@@ -100,6 +144,7 @@ def parse_sheet(df, period, role):
             blk_h   = parse_td(df.iloc[i+6, 1] if i+6 < len(df) else None)
             duty_h  = parse_td(df.iloc[i+7, 1] if i+7 < len(df) else None)
             sched   = [str(v).strip() for v in df.iloc[i, 2:].tolist()]
+            pilot_row = i
             i += 8
         else:
             if not re.match(r'^[A-Z]{4,5}$', c0): i += 1; continue
@@ -112,6 +157,7 @@ def parse_sheet(df, period, role):
             blk_h   = parse_td(df.iloc[i+7, 1] if i+7 < len(df) else None)
             duty_h  = parse_td(df.iloc[i+8, 1] if i+8 < len(df) else None)
             sched   = [str(v).strip() for v in df.iloc[i, 2:].tolist()]
+            pilot_row = i
             i += 9
 
         if not re.match(r'^[A-Z]{4,5}$', code): continue
@@ -132,12 +178,22 @@ def parse_sheet(df, period, role):
         total_days = len([s for s in sched if s not in ['nan','NaT','','None']])
         excl = ((vac + med) / max(total_days, 1)) > 0.35 or blk_h < 5
 
+        # Count turnos (programmed) or vuelos (actual)
+        if role == 'programmed':
+            turnos = count_turnos(df, pilot_row, abcd)
+            vuelos = None
+        else:
+            turnos = None
+            vuelos = count_vuelos(df, pilot_row, abcd)
+
         pilots.append({
             'period': period, 'role': role, 'code': code, 'name': name,
             'pos': pos, 'pos_group': pg, 'base': base,
             'block_h': blk_h, 'duty_h': duty_h, 'credits_h': cred_h,
             'libre_days': lib, 'vac_days': vac, 'med_days': med, 'sim_days': sim,
             'exclude_from_avg': excl,
+            'turnos': turnos,
+            'vuelos': vuelos,
         })
     return pilots
 
@@ -148,12 +204,26 @@ def build_dataset():
         print('ERROR: No se encontraron archivos .xlsx en ' + str(DATA_DIR))
         sys.exit(1)
 
+    # Load config.json if present
+    config_path = DATA_DIR / 'config.json'
+    file_map = {}
+    if config_path.exists():
+        cfg = json.loads(config_path.read_text(encoding='utf-8'))
+        for entry in cfg.get('files', []):
+            file_map[entry['filename']] = {
+                'period': entry['period'],
+                'role':   entry['role'],
+            }
+        print('config.json cargado: ' + str(len(file_map)) + ' entradas\n')
+    else:
+        print('AVISO: no se encontro config.json en data/ — usando deteccion automatica\n')
+
     print('Procesando ' + str(len(xlsx_files)) + ' archivos...\n')
     all_records = []
 
     for fpath in xlsx_files:
         fname = os.path.basename(fpath)
-        period_from_name = detect_period_from_filename(fname)
+        cfg_entry = file_map.get(fname)
         try:
             xl = pd.ExcelFile(fpath)
         except Exception as e:
@@ -162,15 +232,31 @@ def build_dataset():
 
         for sheet_name in xl.sheet_names:
             try:
-                df     = pd.read_excel(fpath, sheet_name=sheet_name, header=None)
-                period = period_from_name or detect_period_from_df(df)
+                df = pd.read_excel(fpath, sheet_name=sheet_name, header=None)
+
+                # Period: config > filename > content
+                if cfg_entry:
+                    period = cfg_entry['period']
+                else:
+                    period = detect_period_from_filename(fname) or detect_period_from_df(df)
+
                 if not period:
-                    print('  ? ' + fname + '/' + sheet_name + ': período no detectado, omitiendo')
+                    print('  ? ' + fname + '/' + sheet_name + ': periodo no detectado, omitiendo')
                     continue
-                role = detect_role(fname, sheet_name)
+
+                # Role: config entry > sheet name > filename > default
+                if cfg_entry:
+                    sl = sheet_name.lower()
+                    if any(w in sl for w in ['hora','actual','efect']):
+                        role = 'actual'
+                    else:
+                        role = cfg_entry['role']
+                else:
+                    role = detect_role(fname, sheet_name)
+
                 recs = parse_sheet(df, period, role)
                 all_records.extend(recs)
-                lbl  = PERIOD_LABELS_MAP.get(period, period)
+                lbl = PERIOD_LABELS_MAP.get(period, period)
                 print('  ok ' + fname + '/' + sheet_name + ': ' + lbl + ' ' + role + ' ' + str(len(recs)) + 'p')
             except Exception as e:
                 print('  x ' + fname + '/' + sheet_name + ': ' + str(e))
@@ -188,6 +274,7 @@ def build_dataset():
                 'exclude_from_avg': r['exclude_from_avg'],
                 'block_h_programmed': None, 'duty_h_programmed': None, 'credits_h_programmed': None,
                 'block_h_actual':     None, 'duty_h_actual':     None, 'credits_h_actual':     None,
+                'turnos_programados': None, 'vuelos_efectuados': None,
             }
         rk = r['role']
         for metric in ['block_h', 'duty_h', 'credits_h']:
@@ -195,6 +282,10 @@ def build_dataset():
                 summary[key][metric + '_' + rk] = r[metric]
         if r['exclude_from_avg']:
             summary[key]['exclude_from_avg'] = True
+        if rk == 'programmed' and r.get('turnos') is not None:
+            summary[key]['turnos_programados'] = r['turnos']
+        if rk == 'actual' and r.get('vuelos') is not None:
+            summary[key]['vuelos_efectuados'] = r['vuelos']
 
     records = list(summary.values())
     periods = sorted(set(r['period'] for r in records))
@@ -327,6 +418,12 @@ def generate_html(records, periods):
         '.kpi,.card{animation:fadeUp .28s ease both}'
         '.kpi:nth-child(1){animation-delay:.04s}.kpi:nth-child(2){animation-delay:.08s}'
         '.kpi:nth-child(3){animation-delay:.12s}.kpi:nth-child(4){animation-delay:.16s}'
+        '.kpi:nth-child(5){animation-delay:.20s}.kpi:nth-child(6){animation-delay:.24s}'
+        '.turnos-bar{display:flex;align-items:center;gap:8px;margin-top:6px}'
+        '.tbar-track{flex:1;height:7px;background:var(--sand-200);border-radius:4px;overflow:hidden;position:relative}'
+        '.tbar-prog{height:100%;background:var(--dusk);border-radius:4px;position:absolute;left:0;top:0}'
+        '.tbar-act{height:100%;background:var(--clay);border-radius:4px;position:absolute;left:0;top:0;opacity:.85}'
+        '.tbar-label{font-size:10px;font-family:var(--mono);color:var(--muted);white-space:nowrap}'
         '.kpi:nth-child(5){animation-delay:.20s}'
     )
 
@@ -392,13 +489,17 @@ def generate_html(records, periods):
         '  const accProg = pr.reduce((s,r)  => s + (r.block_h_programmed || 0), 0);\n'
         '  const accAct  = pr.reduce((s,r)  => s + (r.block_h_actual    || 0), 0);\n'
         '  const pva = accProg > 0 ? (accAct - accProg)/accProg*100 : 0;\n'
+        '  const turnos = latest ? (latest.turnos_programados || null) : null;\n'
+        '  const vuelos = latest ? (latest.vuelos_efectuados  || null) : null;\n'
+        '  const convPct = (turnos && vuelos) ? vuelos/turnos*100 : null;\n'
         '\n'
         "  document.getElementById('kpiRow').innerHTML =\n"
         '    \'<div class="kpi k-clay"><div class="kpi-label">Bloque \u00b7 \' + (PERIOD_LABELS[lp]||lp) + \'</div><div class="kpi-val">\' + fmt(mb) + \'<span class="kpi-unit">h</span></div><div class="kpi-footer"><span class="kpi-vs">Prom.: <b>\' + fmt(ab) + \'h</b></span><span class="delta \' + dc(bd) + \'">\' + ds(bd) + \'</span></div></div>\' +\n'
         '    \'<div class="kpi k-sand"><div class="kpi-label">Deber \u00b7 \' + (PERIOD_LABELS[lp]||lp) + \'</div><div class="kpi-val">\' + fmt(md) + \'<span class="kpi-unit">h</span></div><div class="kpi-footer"><span class="kpi-vs">Prom.: <b>\' + fmt(ad) + \'h</b></span><span class="delta \' + dc(dd) + \'">\' + ds(dd) + \'</span></div></div>\' +\n'
         '    \'<div class="kpi k-sage"><div class="kpi-label">D\u00edas libres \u00b7 \' + (PERIOD_LABELS[lp]||lp) + \'</div><div class="kpi-val">\' + ml + \'<span class="kpi-unit">d</span></div><div class="kpi-footer"><span class="kpi-vs">Prom.: <b>\' + fmt(al,0) + \'d</b></span><span class="delta \' + dc(ml-al) + \'">\' + (ml-al>=0?"+":"") + (ml-al).toFixed(0) + \'d</span></div></div>\' +\n'
-        '    \'<div class="kpi k-dusk"><div class="kpi-label">Bloque acumulado</div><div class="kpi-val">\' + fmt(accB,0) + \'<span class="kpi-unit">h</span></div><div class="kpi-footer"><span class="kpi-vs">\' + actP.length + \' meses activos</span><span class="delta d-neu">/\' + PERIODS.length + \'m</span></div></div>\' +\n'
-        '    \'<div class="kpi k-rust"><div class="kpi-label">Prog. vs Efectuado</div><div class="kpi-val">\' + fmt(Math.abs(pva),1) + \'<span class="kpi-unit">%</span></div><div class="kpi-footer"><span class="kpi-vs">P:<b>\' + fmt(accProg,0) + \'h</b> E:<b>\' + fmt(accAct,0) + \'h</b></span><span class="delta \' + (pva>=0?"d-up":"d-down") + \'">\' + (pva>=0?"\\u25b2":"\\u25bc") + \' efectuado</span></div></div>\';\n'
+        '    \'<div class="kpi k-dusk"><div class="kpi-label">Turnos prog. \u00b7 \' + (PERIOD_LABELS[lp]||lp) + \'</div><div class="kpi-val">\' + (turnos !== null ? turnos : "\\u2014") + \'<span class="kpi-unit">\' + (vuelos !== null ? " / "+vuelos+" ef." : "") + \'</span></div><div class="kpi-footer"><span class="kpi-vs">\' + (convPct !== null ? "Conversi\\u00f3n:" : "Sin datos efectuados") + \'</span>\' + (convPct !== null ? \'<span class="delta \' + (convPct>=80?"d-up":convPct>=60?"d-warn":"d-down") + \'">\' + convPct.toFixed(0) + \'%</span>\' : "") + \'</div></div>\' +\n'
+        '    \'<div class="kpi k-rust"><div class="kpi-label">Bloque acumulado</div><div class="kpi-val">\' + fmt(accB,0) + \'<span class="kpi-unit">h</span></div><div class="kpi-footer"><span class="kpi-vs">\' + actP.length + \' meses activos</span><span class="delta d-neu">/\' + PERIODS.length + \'m</span></div></div>\' +\n'
+        '    \'<div class="kpi k-sand"><div class="kpi-label">Prog. vs Efectuado</div><div class="kpi-val">\' + fmt(Math.abs(pva),1) + \'<span class="kpi-unit">%</span></div><div class="kpi-footer"><span class="kpi-vs">P:<b>\' + fmt(accProg,0) + \'h</b> E:<b>\' + fmt(accAct,0) + \'h</b></span><span class="delta \' + (pva>=0?"d-up":"d-down") + \'">\' + (pva>=0?"\\u25b2":"\\u25bc") + \' ef.</span></div></div>\';\n'
         '\n'
         '  // Line chart\n'
         '  const excl  = pr.filter(r => r.exclude_from_avg).map(r => r.period);\n'
@@ -473,24 +574,29 @@ def generate_html(records, periods):
         '  });\n'
         '\n'
         '  // Comparison table\n'
-        '  let tbl = \'<table class="comp-table"><thead><tr><th>Per\\u00edodo</th><th>Programado</th><th>Efectuado</th><th>\\u0394</th><th>Mayor</th></tr></thead><tbody>\';\n'
+        '  let tbl = \'<table class="comp-table"><thead><tr><th>Per\\u00edodo</th><th>Programado</th><th>Efectuado</th><th>Turnos prog.</th><th>Vuelos ef.</th><th>Conversi\\u00f3n</th><th>\\u0394 Bloque</th></tr></thead><tbody>\';\n'
         '  PERIODS.forEach(p => {\n'
         '    const r = pr.find(x => x.period===p); if(!r) return;\n'
         '    const pg=r.block_h_programmed||0, ac=r.block_h_actual||0, d=ac-pg;\n'
+        '    const tp=r.turnos_programados, ve=r.vuelos_efectuados;\n'
+        '    const cp = (tp && ve) ? ve/tp*100 : null;\n'
         '    const ex = r.exclude_from_avg ? \'<span style="color:var(--rust);font-size:9px"> \\u2731</span>\' : "";\n'
-        '    const w = pg===0&&ac===0 ? \'<span class="winner w-eq">Sin datos</span>\'\n'
-        '            : pg===0         ? \'<span class="winner w-act">Solo efectuado</span>\'\n'
-        '            : d > .5         ? \'<span class="winner w-act">\\u25b2 Efectuado</span>\'\n'
-        '            : d < -.5        ? \'<span class="winner w-prog">\\u25b2 Programado</span>\'\n'
-        '            :                  \'<span class="winner w-eq">\\u2248 Iguales</span>\';\n'
+        '    const cpCell = cp !== null\n'
+        '      ? \'<span style="font-family:var(--mono);font-size:11px;color:\' + (cp>=80?"var(--sage)":cp>=60?"var(--rust)":"var(--warm-red)") + \'">\' + cp.toFixed(0) + \'%</span>\'\n'
+        '      : \'<span style="color:var(--dim)">\\u2014</span>\';\n'
         '    const dstr = pg > 0 ? ((d>=0?"+":"")+d.toFixed(1)+"h") : "\\u2014";\n'
+        '    const barW = tp ? Math.min(100, (ve||0)/tp*100) : 0;\n'
+        '    const barHtml = tp ? (\'<div class="turnos-bar"><div class="tbar-track" style="width:60px"><div class="tbar-prog" style="width:100%"></div><div class="tbar-act" style="width:\'+barW+\'%"></div></div><span class="tbar-label">\'+((ve||0))+\'/\'+tp+\'</span></div>\') : \'<span style="color:var(--dim)">\\u2014</span>\';\n'
         '    tbl += \'<tr><td style="font-family:var(--mono);font-size:11px;color:var(--text2)">\' + (PERIOD_LABELS[p]||p) + ex + \'</td>\'\n'
         '         + \'<td style="font-family:var(--mono)">\' + (pg>0?pg.toFixed(1)+"h":"\\u2014") + \'</td>\'\n'
         '         + \'<td style="font-family:var(--mono)">\' + (ac>0?ac.toFixed(1)+"h":"\\u2014") + \'</td>\'\n'
+        '         + \'<td>\' + (tp !== null ? tp : "\\u2014") + \'</td>\'\n'
+        '         + \'<td>\' + (ve !== null ? ve : "\\u2014") + \'</td>\'\n'
+        '         + \'<td>\' + cpCell + \'</td>\'\n'
         '         + \'<td style="font-family:var(--mono);color:\' + (d>=0?"var(--sage)":"var(--warm-red)") + \'">\' + dstr + \'</td>\'\n'
-        '         + \'<td>\' + w + \'</td></tr>\';\n'
+        '         + \'</tr>\';\n'
         '  });\n'
-        '  if (excl.length) tbl += \'<tr><td colspan="5" style="font-size:9px;color:var(--muted);font-family:var(--mono);padding:6px 10px">\\u2731 Excluido del promedio comparativo</td></tr>\';\n'
+        '  if (excl.length) tbl += \'<tr><td colspan="7" style="font-size:9px;color:var(--muted);font-family:var(--mono);padding:6px 10px">\\u2731 Excluido del promedio comparativo</td></tr>\';\n'
         '  tbl += "</tbody></table>";\n'
         "  document.getElementById('compTableWrap').innerHTML = tbl;\n"
         '\n'
