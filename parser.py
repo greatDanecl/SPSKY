@@ -552,17 +552,30 @@ def generate_html(records, periods):
         '  const convPct = (turnos && vuelos) ? vuelos/turnos*100 : null;\n'
         '\n'
         "  document.getElementById('kpiRow').innerHTML =\n"
-        '    \'<div class="kpi k-clay"><div class="kpi-label">Bloque \u00b7 \' + (PERIOD_LABELS[lp]||lp) + \'</div><div class="kpi-val">\' + fmt(mb) + \'<span class="kpi-unit">h</span></div><div class="kpi-footer"><span class="kpi-vs">Prom.: <b>\' + fmt(ab) + \'h</b></span><span class="delta \' + dc(bd) + \'">\' + ds(bd) + \'</span></div></div>\' +\n'
-        '    \'<div class="kpi k-sand"><div class="kpi-label">Deber \u00b7 \' + (PERIOD_LABELS[lp]||lp) + \'</div><div class="kpi-val">\' + fmt(md) + \'<span class="kpi-unit">h</span></div><div class="kpi-footer"><span class="kpi-vs">Prom.: <b>\' + fmt(ad) + \'h</b></span><span class="delta \' + dc(dd) + \'">\' + ds(dd) + \'</span></div></div>\' +\n'
+        '    \'<div class="kpi k-clay"><div class="kpi-label">Block \u00b7 \' + (PERIOD_LABELS[lp]||lp) + \'</div><div class="kpi-val">\' + fmt(mb) + \'<span class="kpi-unit">h</span></div><div class="kpi-footer"><span class="kpi-vs">Prom.: <b>\' + fmt(ab) + \'h</b></span><span class="delta \' + dc(bd) + \'">\' + ds(bd) + \'</span></div></div>\' +\n'
+        '    \'<div class="kpi k-sand"><div class="kpi-label">Duty \u00b7 \' + (PERIOD_LABELS[lp]||lp) + \'</div><div class="kpi-val">\' + fmt(md) + \'<span class="kpi-unit">h</span></div><div class="kpi-footer"><span class="kpi-vs">Prom.: <b>\' + fmt(ad) + \'h</b></span><span class="delta \' + dc(dd) + \'">\' + ds(dd) + \'</span></div></div>\' +\n'
         '    \'<div class="kpi k-sage"><div class="kpi-label">D\u00edas libres \u00b7 \' + (PERIOD_LABELS[lp]||lp) + \'</div><div class="kpi-val">\' + ml + \'<span class="kpi-unit">d</span></div><div class="kpi-footer"><span class="kpi-vs">Prom.: <b>\' + fmt(al,0) + \'d</b></span><span class="delta \' + dc(ml-al) + \'">\' + (ml-al>=0?"+":"") + (ml-al).toFixed(0) + \'d</span></div></div>\' +\n'
         '    \'<div class="kpi k-dusk"><div class="kpi-label">Turnos prog. \u00b7 \' + (PERIOD_LABELS[lp]||lp) + \'</div><div class="kpi-val">\' + (turnos !== null ? turnos : "\\u2014") + \'<span class="kpi-unit">\' + (vuelos !== null ? " / "+vuelos+" ef." : "") + \'</span></div><div class="kpi-footer"><span class="kpi-vs">\' + (convPct !== null ? "Conversi\\u00f3n:" : "Sin datos efectuados") + \'</span>\' + (convPct !== null ? \'<span class="delta \' + (convPct>=80?"d-up":convPct>=60?"d-warn":"d-down") + \'">\' + convPct.toFixed(0) + \'%</span>\' : "") + \'</div></div>\' +\n'
-        '    \'<div class="kpi k-rust"><div class="kpi-label">Bloque acumulado</div><div class="kpi-val">\' + fmt(accB,0) + \'<span class="kpi-unit">h</span></div><div class="kpi-footer"><span class="kpi-vs">\' + actP.length + \' meses activos</span><span class="delta d-neu">/\' + PERIODS.length + \'m</span></div></div>\' +\n'
+        '    \'<div class="kpi k-rust"><div class="kpi-label">Block acumulado</div><div class="kpi-val">\' + fmt(accB,0) + \'<span class="kpi-unit">h</span></div><div class="kpi-footer"><span class="kpi-vs">\' + actP.length + \' meses activos</span><span class="delta d-neu">/\' + PERIODS.length + \'m</span></div></div>\' +\n'
         '    \'<div class="kpi k-sand"><div class="kpi-label">Prog. vs Efectuado</div><div class="kpi-val">\' + fmt(Math.abs(pva),1) + \'<span class="kpi-unit">%</span></div><div class="kpi-footer"><span class="kpi-vs">P:<b>\' + fmt(accProg,0) + \'h</b> E:<b>\' + fmt(accAct,0) + \'h</b></span><span class="delta \' + (pva>=0?"d-up":"d-down") + \'">\' + (pva>=0?"\\u25b2":"\\u25bc") + \' ef.</span></div></div>\';\n'
         '\n'
         '  // Line chart\n'
+        '  // pData: muestra efectuado si existe, si no programado (meses futuros/sin efectuado aún)\n'
+        '  // gData: promedio del cargo completo, pilotos activos sin ausencias prolongadas\n'
+        '  //        usa efectuado si existe, si no programado — mismo criterio que pData\n'
         '  const excl  = pr.filter(r => r.exclude_from_avg).map(r => r.period);\n'
-        '  const pData = PERIODS.map(p => { const r = pr.find(x => x.period===p); return r ? (r.block_h_actual||0) : null; });\n'
-        '  const gData = PERIODS.map(p => { const a = gr.filter(r => r.period===p && !r.exclude_from_avg && r.block_h_actual>0); return a.length ? avg(a.map(r => r.block_h_actual)) : null; });\n'
+        '  function bestBlock(r) { return (r.block_h_actual && r.block_h_actual > 0) ? r.block_h_actual : (r.block_h_programmed || 0); }\n'
+        '  function isProgrammedOnly(r) { return !(r.block_h_actual && r.block_h_actual > 0) && (r.block_h_programmed && r.block_h_programmed > 0); }\n'
+        '  const pData = PERIODS.map(p => { const r = pr.find(x => x.period===p); return r ? bestBlock(r) : null; });\n'
+        '  // progOnlyPeriods: períodos donde el piloto solo tiene programado (sin efectuado)\n'
+        '  const progOnlyIdx = PERIODS.map((p,i) => { const r = pr.find(x => x.period===p); return (r && isProgrammedOnly(r)) ? i : -1; }).filter(i => i>=0);\n'
+        '  // gData: promedio del segmento comparable (mismo cargo, sin ausencias)\n'
+        '  // Excluye al piloto seleccionado del cálculo del promedio\n'
+        '  const gData = PERIODS.map(p => {\n'
+        '    const peers = gr.filter(r => r.name !== pilotName && !r.exclude_from_avg && bestBlock(r) > 0);\n'
+        '    const inPeriod = peers.filter(r => r.period === p);\n'
+        '    return inPeriod.length ? avg(inPeriod.map(r => bestBlock(r))) : null;\n'
+        '  });\n'
         "  const bc = document.getElementById('blockChart').getContext('2d');\n"
         '  if (blockChartInst) blockChartInst.destroy();\n'
         '  blockChartInst = new Chart(bc, {\n'
@@ -572,9 +585,9 @@ def generate_html(records, periods):
         "        backgroundColor(c) { return makeGrad(bc, c.chart.chartArea, 'rgba(196,133,106,.15)', 'rgba(196,133,106,.01)'); },\n"
         '        borderWidth:2.5,\n'
         '        pointRadius(c)          { return excl.includes(PERIODS[c.dataIndex]) ? 6 : 4; },\n'
-        "        pointStyle(c)           { return excl.includes(PERIODS[c.dataIndex]) ? 'triangle' : 'circle'; },\n"
-        "        pointBackgroundColor(c) { return excl.includes(PERIODS[c.dataIndex]) ? '#B5603A' : '#C4856A'; },\n"
-        "        pointBorderColor(c)     { return excl.includes(PERIODS[c.dataIndex]) ? '#B5603A' : '#C4856A'; },\n"
+        "        pointStyle(c)           { return excl.includes(PERIODS[c.dataIndex]) ? 'triangle' : progOnlyIdx.includes(c.dataIndex) ? 'rectRot' : 'circle'; },\n"
+        "        pointBackgroundColor(c) { return excl.includes(PERIODS[c.dataIndex]) ? '#B5603A' : progOnlyIdx.includes(c.dataIndex) ? '#8B7BA8' : '#C4856A'; },\n"
+        "        pointBorderColor(c)     { return excl.includes(PERIODS[c.dataIndex]) ? '#B5603A' : progOnlyIdx.includes(c.dataIndex) ? '#8B7BA8' : '#C4856A'; },\n"
         '        pointHoverRadius:7, tension:.35, fill:true, spanGaps:true, order:1 },\n'
         "      { label:'Prom. cargo', data:gData, borderColor:'#BFA882', borderWidth:1.5, borderDash:[5,4],\n"
         "        pointBackgroundColor:'#BFA882', pointRadius:3, pointHoverRadius:5,\n"
@@ -587,9 +600,9 @@ def generate_html(records, periods):
         "        titleFont:{family:\"'DM Sans',sans-serif\",size:12,weight:500},\n"
         "        bodyFont:{family:\"'DM Mono',monospace\",size:11},\n"
         '        callbacks:{\n'
-        '          title(i)     { const p=PERIODS[i[0].dataIndex]; return (PERIOD_LABELS[p]||p)+(excl.includes(p)?" \u00b7 \u26a0 excluido del prom.":""); },\n'
-        '          label(i)     { if(i.raw==null)return null; return "  "+i.dataset.label+": "+i.raw.toFixed(1)+"h"; },\n'
-        '          afterBody(i) { const p=PERIODS[i[0].dataIndex]; const my=pData[i[0].dataIndex],av=gData[i[0].dataIndex]; if(av==null||my==null)return["  (mes excluido del c\u00e1lculo)"]; const d=my-av; return["  vs promedio: "+(d>=0?"+":"")+d.toFixed(1)+"h"]; }\n'
+        '          title(i)     { const p=PERIODS[i[0].dataIndex]; const ex=excl.includes(p); const po=progOnlyIdx.includes(i[0].dataIndex); return (PERIOD_LABELS[p]||p)+(ex?" \u00b7 \u26a0 excluido del prom.":po?" \u00b7 solo programado":""); },\n'
+        '          label(i)     { if(i.raw==null||i.raw===0)return null; const po=progOnlyIdx.includes(i.dataIndex)&&i.datasetIndex===0; return "  "+i.dataset.label+(po?" (prog.)":"")+": "+i.raw.toFixed(1)+"h"; },\n'
+        '          afterBody(i) { const p=PERIODS[i[0].dataIndex]; const my=pData[i[0].dataIndex],av=gData[i[0].dataIndex]; if(av==null||my==null||my===0)return[]; const d=my-av; return["  vs prom. cargo: "+(d>=0?"+":"")+d.toFixed(1)+"h"]; }\n'
         '        }\n'
         '      }},\n'
         "      scales:{\n"
@@ -758,7 +771,8 @@ def generate_html(records, periods):
         '        <div class="card-head">\n'
         '          <div><div class="card-title">Horas Bloque \u00b7 Evoluci\u00f3n mensual</div><div class="card-sub">Piloto vs. promedio del cargo (meses activos)</div></div>\n'
         '          <div class="legend">\n'
-        '            <div class="leg"><svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4" stroke="var(--clay)" stroke-width="2.5"/><circle cx="9" cy="4" r="3" fill="var(--clay)"/></svg><span>Piloto</span></div>\n'
+        '            <div class="leg"><svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4" stroke="var(--clay)" stroke-width="2.5"/><circle cx="9" cy="4" r="3" fill="var(--clay)"/></svg><span>Efectuado</span></div>\n'
+        '            <div class="leg"><svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4" stroke="var(--dusk)" stroke-width="1.5" stroke-dasharray="2 2"/><rect x="5.5" y="1.5" width="5" height="5" transform="rotate(45 9 4)" fill="var(--dusk)"/></svg><span style="color:var(--dusk)">Solo programado</span></div>\n'
         '            <div class="leg"><svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4" stroke="var(--sand-400)" stroke-width="1.5" stroke-dasharray="4 3"/><circle cx="9" cy="4" r="2.5" fill="var(--sand-400)"/></svg><span>Prom. cargo</span></div>\n'
         '            <div class="leg"><svg width="14" height="12"><polygon points="7,1 13,11 1,11" fill="none" stroke="var(--rust)" stroke-width="1.5"/></svg><span style="color:var(--rust)">Excluido prom.</span></div>\n'
         '          </div>\n'
