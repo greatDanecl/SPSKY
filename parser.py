@@ -1,5 +1,5 @@
 """
-FDS Parser — lee todos los xlsx en /data y genera index.html.
+SDC Parser — lee todos los xlsx en /data y genera index.html.
 Uso: python parser.py
 """
 import pandas as pd, re, json, numpy as np, os, glob, sys
@@ -703,7 +703,7 @@ def generate_html(records, periods):
         '<head>\n'
         '<meta charset="UTF-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
-        '<title>FDS \u00b7 Productividad de Tripulaci\u00f3n</title>\n'
+        '<title>SPSKY Digital Copilot \u00b7 Productividad de Tripulaci\u00f3n</title>\n'
         '<link rel="preconnect" href="https://fonts.googleapis.com">\n'
         '<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">\n'
         '<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>\n'
@@ -715,9 +715,9 @@ def generate_html(records, periods):
         '  <div class="sidebar-top">\n'
         '    <div class="brand">\n'
         '      <div class="brand-icon"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg></div>\n'
-        '      <span class="brand-name">FDS Portal</span>\n'
+        '      <span class="brand-name">SPSKY</span>\n'
         '    </div>\n'
-        '    <div class="brand-sub">Flight Data System</div>\n'
+        '    <div class="brand-sub" style="margin-left:38px">Digital Copilot</div>\n'
         '  </div>\n'
         '  <div class="filters">\n'
         '    <div class="f-block"><div class="f-label">Cargo</div>\n'
@@ -751,7 +751,7 @@ def generate_html(records, periods):
         '  <div class="topbar">\n'
         '    <div>\n'
         '      <div class="page-title" id="pageTitle">Seleccione un <span>tripulante</span></div>\n'
-        '      <div class="page-sub" id="pageSub">FDS Portal \u00b7 Productividad de tripulaci\u00f3n</div>\n'
+        '      <div class="page-sub" id="pageSub">SDC \u00b7 Productividad de Tripulaci\u00f3n</div>\n'
         '    </div>\n'
         '    <div class="topbar-right">\n'
         '      <div class="pill"><span class="dot"></span>Sistema activo</div>\n'
@@ -761,7 +761,7 @@ def generate_html(records, periods):
         '  <div class="content">\n'
         '    <div id="placeholder" style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:14px;color:var(--dim);padding:60px 0;">\n'
         '      <svg width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.2" viewBox="0 0 24 24" style="stroke:var(--border2)"><path d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>\n'
-        '      <div style="font-family:var(--display);font-size:18px;color:var(--sand-400)">FDS \u00b7 Flight Data System</div>\n'
+        '      <div style="font-family:var(--display);font-size:18px;color:var(--sand-400)">SDC \u00b7 SPSKY Digital Copilot</div>\n'
         '      <div style="font-size:12px;text-align:center;max-width:300px;line-height:1.7;color:var(--muted)">Seleccione un cargo y un tripulante para visualizar sus indicadores de productividad.</div>\n'
         '      <div style="font-size:10px;font-family:var(--mono);color:var(--dim);margin-top:4px" id="periodsHint"></div>\n'
         '    </div>\n'
@@ -769,7 +769,7 @@ def generate_html(records, periods):
         '      <div class="kpi-grid" id="kpiRow"></div>\n'
         '      <div class="card">\n'
         '        <div class="card-head">\n'
-        '          <div><div class="card-title">Horas Bloque \u00b7 Evoluci\u00f3n mensual</div><div class="card-sub">Piloto vs. promedio del cargo (meses activos)</div></div>\n'
+        '          <div><div class="card-title">Horas Block \u00b7 Evoluci\u00f3n mensual</div><div class="card-sub">Piloto vs. promedio del cargo (meses activos)</div></div>\n'
         '          <div class="legend">\n'
         '            <div class="leg"><svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4" stroke="var(--clay)" stroke-width="2.5"/><circle cx="9" cy="4" r="3" fill="var(--clay)"/></svg><span>Efectuado</span></div>\n'
         '            <div class="leg"><svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4" stroke="var(--dusk)" stroke-width="1.5" stroke-dasharray="2 2"/><rect x="5.5" y="1.5" width="5" height="5" transform="rotate(45 9 4)" fill="var(--dusk)"/></svg><span style="color:var(--dusk)">Solo programado</span></div>\n'
