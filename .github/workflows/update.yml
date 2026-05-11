@@ -1,18 +1,16 @@
-name: Actualizar Dashboard FDS
+name: Actualizar Dashboard SPSKY
 
 on:
   push:
     paths:
-      - 'data/**.xlsx'
-  workflow_dispatch:
+      - 'data/**.xlsx'   # Se dispara cuando se sube un xlsx a /data
+  workflow_dispatch:      # También permite correrlo manualmente
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write        # Necesario para hacer commit del index.html generado
 
 concurrency:
-  group: "pages"
+  group: "deploy"
   cancel-in-progress: false
 
 env:
@@ -21,9 +19,6 @@ env:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - name: Checkout repositorio
@@ -46,16 +41,12 @@ jobs:
             echo "ERROR: index.html no fue generado"
             exit 1
           fi
-          echo "Dashboard generado correctamente ($(wc -c < index.html) bytes)"
+          echo "Dashboard generado: $(wc -c < index.html) bytes"
 
-      - name: Preparar GitHub Pages
-        uses: actions/configure-pages@v4
-
-      - name: Subir artefacto
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: '.'
-
-      - name: Publicar en GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Commit del index.html generado
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git diff --staged --quiet && echo "Sin cambios" || git commit -m "Dashboard actualizado $(date +'%Y-%m-%d %H:%M UTC')"
+          git push
