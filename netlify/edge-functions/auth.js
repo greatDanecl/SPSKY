@@ -2,7 +2,7 @@ export default async (request, context) => {
   const auth = request.headers.get("Authorization");
   
   // Define aquí tu contraseña (o usa variables de entorno)
-  const password = "TU_CONTRASEÑA_AQUÍ";
+  const password = "SPSKY2026";
   const expectedAuth = `Basic ${btoa(`usuario:${password}`)}`;
 
   if (auth !== expectedAuth) {
