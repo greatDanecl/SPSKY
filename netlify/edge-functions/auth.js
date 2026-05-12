@@ -3,7 +3,7 @@ export default async (request, context) => {
   
   // Define aquí tu contraseña (o usa variables de entorno)
   const password = "SPSKY2026";
-  const expectedAuth = `Basic ${btoa(`usuario:${password}`)}`;
+  const expectedAuth = `Basic ${btoa(`sindicato:${password}`)}`;
 
   if (auth !== expectedAuth) {
     return new Response("Acceso Denegado", {
